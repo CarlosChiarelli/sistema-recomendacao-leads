@@ -45,8 +45,6 @@ class Visualizacao:
                 plt.show()
                 print('\n')
 
-
-
     def missings_viz(self, df, visualizar=True, escolhido_tipo=None, df_missings=False):
         '''
         Visualizar os missings, plota o tipo de visualizacao
@@ -110,24 +108,6 @@ class Visualizacao:
         print('Visualizando correlação de Pearson (NAs removidos)')
         heatmap(df[colunas].dropna().corr(), annot=anotado)
 
-
-
-    def regression_viz(self, y_true, y_pred, nome):
-        '''
-        Visualize the quality of regression model
-        :param y_true: pd.Series with true label values
-        :param y_pred: pd.Series with predicted label values
-        :param nome: Name of the file wich will be saved
-        :return: Save files in specified path
-        '''
-        residual = y_pred - y_true
-        data = pd.DataFrame({'pred' : y_pred, 'true' : y_true, 'residual': residual})
-        plot1 = sns.distplot(data['residual'], bins = 50)
-        plot2 = sns.scatterplot(x= 'true', y = 'residual', data = data)
-        plt.savefig(plot1, '../data/'+nome+'_distplot.csv')
-        plt.savefig(plot1, '../data/' + nome + 'scatterplot.csv')
-        plt.show()
-
     def plotaDistribuicaoUniVar(self, dados, tamanho=1):
         '''
         : ações: recebe uma coluna de DF e plota distribuição histograma, boxplot e qqplot
@@ -151,3 +131,17 @@ class Visualizacao:
 
         # grafico de quartis teorico (x) Vs (y) real
         qqplot(dados, fit=True, line='45');
+
+    def defineClusters(self, df):
+        ''''
+        : ações: plota uma gráfico com a métrica do "cotovelo" para ver qual quantidade de clusters adequada
+        '''
+        from sklearn.cluster import KMeans
+        from yellowbrick.cluster import KElbowVisualizer
+
+        # Instantiate the clustering model and visualizer
+        model = KMeans()
+        visualizer = KElbowVisualizer(model, k=(4,16))
+
+        visualizer.fit(df)        # Fit the data to the visualizer
+        visualizer.show()        # Finalize and render the figure

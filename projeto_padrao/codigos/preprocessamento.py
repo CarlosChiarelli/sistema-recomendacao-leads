@@ -8,6 +8,8 @@
 #from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, MinMaxScaler
 from sklearn.impute import SimpleImputer
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 from pandas import Series, DataFrame, concat
 import numpy as np
 
@@ -70,10 +72,12 @@ class Preprocessamento:
         self.input_varsCat = None
 
         self.norm_prePca = None
-        self.padron_posPca = None
+        #self.padron_posPca = None
         self.oneHotEnc = None
         self.padron_posPca = None
         self.moda_obj = {}
+        self.pca = None
+        self.linhasTsne = None
 
         self.proc_part1 = {'cols_rem': None,
                            'limitesRenom_outros': None,
@@ -271,6 +275,8 @@ class Preprocessamento:
         for col in self.proc_part1['cols_bin']:
             df[col] = df[col].astype(bool).astype(int)
 
+        return df
+
 
     def processo_part2(self, df, etapa_treino=True):
         '''
@@ -284,6 +290,8 @@ class Preprocessamento:
         :param etapa_treino: Booleano
         :return: nada (altera o DF inserido)
         '''
+        #np.random.seed(0)
+
         if etapa_treino:
             print('Salvando tipo das variáveis', '\n')
             explora = dfExploracao(df)
@@ -304,12 +312,16 @@ class Preprocessamento:
             self.oneHotEnc = OneHotEncoder()
             aux = self.oneHotEnc.fit_transform(df[self.vars_categ])
             df = concat([df.reset_index(drop=True).drop(self.vars_categ, axis=1), DataFrame(aux.toarray())], axis=1)
-            print(df.shape)
+            #print(df.shape)
             del aux
 
             print('Normalização das numéricas', '\n')
             self.norm_prePca = MinMaxScaler()
             df[self.vars_num] = self.norm_prePca.fit_transform(df[self.vars_num])
+
+            print('Redução de dimensionalidade', '\n')
+            self.pca = PCA(n_components=0.95, random_state=42)
+            df = self.pca.fit_transform(df)
 
         else:
             print('Preenchimento dos missings das numéricas', '\n')
@@ -327,137 +339,40 @@ class Preprocessamento:
             print('Normalização pré PCA', '\n')
             df[self.vars_num] = self.norm_prePca.transform(df[self.vars_num])
 
+            print('Redução de dimensionalidade', '\n')            
+            df = self.pca.transform(df)
+
         return df
 
 
-
-
-
-
-
-    def processo(self, df_input, etapa_treino=True, perc_miss=.5, target=False):
-        '''
-        Processo para treinamento do modelo
-        1. Discretiza e corrige variaveis: tipo_escola, Q025, sexo, ano_de_conclusao, raça
-        2. Remove colunas por completude e significado
-        3. Rotula categóricas ordinais
-
-        :param df: Pandas DataFrame
-        :param etapa_treino: Boolean
-        :return: Pandas Data Frame processado
-
-        '''
-
-        # diferenciar etapa TREINO/TESTE
-        # pois fit_transform Treino e apenas transform no Teste
-
-
-        if etapa_treino:
-            # CALCULO tudo se for etapa de TREINO
-
-            print('Definindo colunas a serem removidas')
-            # colunas com muitos NAs
-            self.perc_miss_rm = perc_miss
-            cols_miss = df.isnull().mean() >= self.perc_miss_rm
-            cols_miss = df.columns[cols_miss].tolist()
-
-            # colunas irrelevantes
-            cols_sem_relevancia = [True if x.startswith('CO_') or x.startswith('SG') or x.startswith('IN_') else False for x in df.columns]
-            cols_sem_relevancia = df.columns[cols_sem_relevancia].tolist()
-            
-            cols_presenca = [True if 'PRESENCA' in x else False for x in df.columns]
-            cols_presenca = df.columns[cols_presenca].tolist()
-
-            # colunas para remover
-            self.cols_rem = cols_miss + cols_sem_relevancia + cols_presenca + ['TP_NACIONALIDADE']
-
-            print('Variáveis removidas (significância e completude', self.perc_miss_rm*100, '%)', '\n')
-            df.drop(self.cols_rem, axis=1, inplace=True)
-
-            # salvando colunas e tipos do treino
-            print('Salvando tipos e nomes das colunas de treino', '\n')
-            self.df_nomes_tipos_treino = dfExploracao(df)[['colunas', 'tipos']]
-
-            # tipos categóricas ordinais
-            self.vars_categ_ord = self.df_nomes_tipos_treino[self.df_nomes_tipos_treino['tipos'] == 'object']['colunas']
-            self.vars_numericas = self.df_nomes_tipos_treino[self.df_nomes_tipos_treino['tipos'] != 'object']['colunas']
-
-            print('Rotulação das categóricas ordinais', '\n')
-            for coluna in self.vars_categ_ord:
-                rotula_temp = LabelEncoder()
-                df[coluna] = rotula_temp.fit_transform(df[coluna])
-                self.categ_ordinal.append(rotula_temp)
-
-            print('Preenchimento dos missings das numéricas', '\n')
-            self.imputador_miss = SimpleImputer(strategy='constant', fill_value=0)
-            df[self.vars_numericas] = self.imputador_miss.fit_transform(df[self.vars_numericas])
-
-            print('Normalização dos dados (robusto)', '\n')
-            self.normalizador = RobustScaler()
-            df[self.vars_numericas] = self.normalizador.fit_transform(df[self.vars_numericas])
-
-
-            # testar uma outra hora (codificação em variáveis dummies)
-            # processar categoricas (catBoost um dos melhores para categoricas)
-            #self.catb = ce.CatBoostEncoder(cols=self.categoric_features)
-            #df[self.categoric_features] = self.catb.fit_transform(df[self.categoric_features], y=y)
-
-            #return df[self.categoric_features + self.numeric_features], y
-        
-        else:
-            # APLICO tudo se for etapa de TESTE
-
-            print('Variáveis removidas (significância e completude ', self.perc_miss_rm*100, '%)', '\n')
-            df.drop(self.cols_rem, axis=1, inplace=True)
-
-            print('Rotulação das categóricas ordinais', '\n')
-            for coluna, rotulador in zip(self.vars_categ_ord, self.categ_ordinal):
-                df[coluna] = rotulador.transform(df[coluna])
-
-            print('Preenchimento dos missings das numéricas', '\n')
-            df[self.vars_numericas] = self.imputador_miss.transform(df[self.vars_numericas])
-
-            print('Normalização dos dados (robusto)', '\n')
-            df[self.vars_numericas] = self.normalizador.transform(df[self.vars_numericas])
-
-            #df[self.categoric_features] = self.catb.transform(df[self.categoric_features])
-
-            #return df[self.categoric_features + self.numeric_features]
-        
-        return df
-
-    def reducao_dim(self, x_treino, n_dim=2, metodo='pca'):
+    def reducao_viz(self, df, etapa_treino=True, n_dim=2, perct_linhas=.05, perplexity=10):
         '''
         : ações: redução de dimensionalidade com TSNE
         : param x_treino: Dataframe para converter 
-        : return: DF reduzido
+        : return tsne_results: DF reduzido
+        : return sel: linhas selecionadas
         '''
-        from sklearn.manifold import TSNE
-        from sklearn.decomposition import PCA
+        from datetime import datetime
+        from time import sleep
 
-        if metodo == 'pca':
-            pca = PCA(n_components=n_dim)
-            pca.fit_transform(x_treino)
-            x_reduzido = pca.transform(x_treino)
-            return x_reduzido
+        passado=datetime.now()
 
-        else:
-            tsne = TSNE(n_components=n_dim)
-            tsne_results = tsne.fit_transform(x_treino)
-            return tsne_results
+        if etapa_treino:
+            # selecionando linhas aleatorias de acordo com percentual definidio
+            np.random.seed(42)
+            self.linhasTsne = np.random.choice(df.shape[0], size = int(df.shape[0]*perct_linhas), replace=False)
+            self.linhasTsne = np.sort(self.linhasTsne)
+            print('Dimensão do treino:', df[self.linhasTsne].shape)
+
+            # perplexity defini quão próximo vão ficar os pontos das n dimensões em 2 dimensões            
+            tSNE = TSNE(n_components=n_dim, random_state=42, perplexity = perplexity)
+            print('Treinando T-sne:', tSNE, '\n')
+            tsne_results = tSNE.fit_transform(df[self.linhasTsne])            
+
+        
+        agora=datetime.now()
+        print('Tempo execucao:', agora-passado, '\n')
+        return tsne_results
 
 
-    def balanceamento_oversampling(self, x_treino, y_treino):
-        '''
-        : ações: transforma dados desbalanceados em balanceados (aumenta classe minoritaria)
-        : param x_treino: Dataframe para converter
-        : return: DF balanceado
-        '''
-        from imblearn.over_sampling import SMOTE
 
-        smote = SMOTE(sampling_strategy ="minority")
-
-        X_smote, y_smote = smote.fit_resample(x_treino, y_treino['IN_TREINEIRO'])
-
-        print('Dimensões antes:', (x_treino.shape, y_treino.shape), ' |  Dimensões depois:', (X_smote.shape, y_smote.shape))
-        return X_smote, y_smote

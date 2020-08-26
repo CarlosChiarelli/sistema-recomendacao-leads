@@ -1,0 +1,6 @@
+# Tensorflow API is rapidly evolving (last time I checked)
+# This is the version I designed against
+tensorflow~=1.14.0
+# For saving/loading trained model
+h5py
+
